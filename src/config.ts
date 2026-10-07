@@ -1,5 +1,7 @@
+import { join } from "node:path";
 import { getAddress, isAddress, isHex, parseUnits, type Address, type Hex } from "viem";
 import { ATTRIBUTION_REPO } from "./attribution.js";
+import { packageRoot } from "./paths.js";
 import {
   CELO_CHAIN_ID,
   DEFAULT_CELO_RPC_URL,
@@ -20,8 +22,10 @@ export interface AppConfig {
   telegramBotToken: string | null;
   adminTelegramIds: ReadonlySet<number>;
   lumaEventId: string;
-  lumaAllowPlaceholderPrefix: boolean;
-  lumaCheckedInGuestIds: ReadonlySet<string>;
+  lumaApiKey: string | null;
+  lumaGuestsFile: string | null;
+  databasePath: string;
+  agentWallet: Address | null;
   erc8004Registry: Address | null;
   erc8004AgentId: bigint | null;
   erc8004AgentWallet: Address | null;
@@ -128,8 +132,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     telegramBotToken: optional(env.TELEGRAM_BOT_TOKEN),
     adminTelegramIds,
     lumaEventId: optional(env.LUMA_EVENT_ID) ?? "jujuy-dev",
-    lumaAllowPlaceholderPrefix: flag(env.LUMA_ALLOW_PLACEHOLDER, false),
-    lumaCheckedInGuestIds: new Set(csv(env.LUMA_CHECKED_IN_GUESTS)),
+    lumaApiKey: optional(env.LUMA_API_KEY),
+    lumaGuestsFile: optional(env.LUMA_GUESTS_FILE),
+    databasePath: optional(env.DATABASE_PATH) ?? join(packageRoot(), "data", "comunyfi.sqlite"),
+    agentWallet: parseAddress(env.AGENT_WALLET, "AGENT_WALLET"),
     erc8004Registry: parseAddress(env.ERC8004_REGISTRY_ADDRESS, "ERC8004_REGISTRY_ADDRESS"),
     erc8004AgentId: parseAgentId(env.ERC8004_AGENT_ID),
     erc8004AgentWallet: parseAddress(env.ERC8004_AGENT_WALLET, "ERC8004_AGENT_WALLET"),
@@ -151,6 +157,14 @@ export function configSummary(config: AppConfig): Record<string, string | number
     signerConfigured: config.privateKey !== null,
     telegramConfigured: config.telegramBotToken !== null,
     lumaEventId: config.lumaEventId,
+    lumaMode: config.lumaApiKey
+      ? "api"
+      : config.lumaGuestsFile
+        ? "archivo"
+        : config.seedDemo
+          ? "archivo-demo"
+          : "sin-configurar",
+    databasePath: config.databasePath,
     port: config.port,
   };
 }

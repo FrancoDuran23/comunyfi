@@ -13,8 +13,11 @@ export interface Project {
   recipient: Address;
 }
 
+export type RoundStatus = "draft" | "open" | "closed" | "paid";
+
 export interface Attendee {
   lumaGuestId: string;
+  email: string;
   telegramUserId: number;
   displayName: string;
 }
@@ -50,6 +53,12 @@ export const AllocationErrorCode = {
   PROJECT_CAP_EXCEEDED: "PROJECT_CAP_EXCEEDED",
   SESSION_FROZEN: "SESSION_FROZEN",
   ALREADY_APPROVED: "ALREADY_APPROVED",
+  VOTING_CLOSED: "VOTING_CLOSED",
+  VOTING_OPEN: "VOTING_OPEN",
+  NO_ROUND: "NO_ROUND",
+  NO_PROJECTS: "NO_PROJECTS",
+  ALREADY_OPEN: "ALREADY_OPEN",
+  ALREADY_CLOSED: "ALREADY_CLOSED",
 } as const;
 
 export type AllocationErrorCode = (typeof AllocationErrorCode)[keyof typeof AllocationErrorCode];

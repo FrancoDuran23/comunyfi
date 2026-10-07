@@ -10,11 +10,11 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
-    "test": "node --import tsx --test tests/*.test.ts",
-    "start": "tsx src/main.ts",
-    "live": "tsx src/live.ts",
-    "bot": "tsx src/telegram/bot.ts",
-    "board": "tsx src/projector/server.ts"
+    "test": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx --test tests/*.test.ts",
+    "start": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx src/main.ts",
+    "live": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx src/live.ts",
+    "bot": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx src/telegram/bot.ts",
+    "board": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx src/projector/server.ts"
   },
   "dependencies": {
     "@celo/attribution-tags": "^0.5.0",

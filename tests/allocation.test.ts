@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { getAddress, parseUnits, type Address } from "viem";
 import { planPayouts } from "../src/voting/allocation.js";
 import { createSession } from "../src/voting/session.js";
-import { AllocationError, type Project, type SessionConfig } from "../src/voting/types.js";
+import { AllocationError, type Attendee, type Project, type SessionConfig } from "../src/voting/types.js";
 
 const pool = parseUnits("50000", 18);
 
@@ -17,6 +17,10 @@ function project(id: string, name: string, recipient: Address): Project {
   return { id, name, summary: `Proyecto ${name}`, recipient };
 }
 
+function person(id: string, telegramUserId: number, displayName: string): Attendee {
+  return { lumaGuestId: id, email: `${id}@jujuy.dev`, telegramUserId, displayName };
+}
+
 function sessionWithProjects(): ReturnType<typeof createSession> {
   const session = createSession(config);
   session.addProject(project("agua", "Agua", getAddress("0x1111111111111111111111111111111111111111")));
@@ -27,14 +31,14 @@ function sessionWithProjects(): ReturnType<typeof createSession> {
 
 test("un asistente de Luma y un Telegram reciben fichitas una sola vez", () => {
   const session = sessionWithProjects();
-  session.registerAttendee({ lumaGuestId: "guest_ana", telegramUserId: 10, displayName: "Ana" });
+  session.registerAttendee(person("guest_ana", 10, "Ana"));
 
   assert.throws(
-    () => session.registerAttendee({ lumaGuestId: "guest_ana", telegramUserId: 11, displayName: "Otra" }),
+    () => session.registerAttendee(person("guest_ana", 11, "Otra")),
     (error: unknown) => error instanceof AllocationError && error.code === "DUPLICATE_ATTENDEE",
   );
   assert.throws(
-    () => session.registerAttendee({ lumaGuestId: "guest_beto", telegramUserId: 10, displayName: "Beto" }),
+    () => session.registerAttendee({ ...person("guest_beto", 10, "Beto"), email: "otro@jujuy.dev" }),
     (error: unknown) => error instanceof AllocationError && error.code === "DUPLICATE_TELEGRAM",
   );
   assert.equal(session.listAttendees().length, 1);
@@ -42,19 +46,23 @@ test("un asistente de Luma y un Telegram reciben fichitas una sola vez", () => {
 
 test("el presupuesto y el tope por proyecto frenan el reparto", () => {
   const session = sessionWithProjects();
-  session.registerAttendee({ lumaGuestId: "guest_ana", telegramUserId: 10, displayName: "Ana" });
+  session.registerAttendee(person("guest_ana", 10, "Ana"));
 
-  session.allocate("guest_ana", "agua", 40);
+  session.setFichitas("guest_ana", "agua", 40);
   assert.throws(
-    () => session.allocate("guest_ana", "agua", 1),
+    () => session.setFichitas("guest_ana", "agua", 41),
     (error: unknown) => error instanceof AllocationError && error.code === "PROJECT_CAP_EXCEEDED",
   );
+  session.setFichitas("guest_ana", "agua", 10);
+  assert.equal(session.allocationOf("guest_ana", "agua"), 10);
+  assert.equal(session.remainingFichitas("guest_ana"), 90);
 
-  session.allocate("guest_ana", "residuos", 40);
-  session.allocate("guest_ana", "oficio", 20);
+  session.setFichitas("guest_ana", "agua", 40);
+  session.setFichitas("guest_ana", "residuos", 40);
+  session.setFichitas("guest_ana", "oficio", 20);
   assert.equal(session.remainingFichitas("guest_ana"), 0);
   assert.throws(
-    () => session.allocate("guest_ana", "oficio", 1),
+    () => session.setFichitas("guest_ana", "oficio", 21),
     (error: unknown) => error instanceof AllocationError && error.code === "BUDGET_EXCEEDED",
   );
 });
@@ -62,36 +70,45 @@ test("el presupuesto y el tope por proyecto frenan el reparto", () => {
 test("rechaza montos, proyectos y asistentes que no corresponden", () => {
   const session = sessionWithProjects();
   assert.throws(
-    () => session.allocate("nadie", "agua", 1),
+    () => session.setFichitas("nadie", "agua", 1),
     (error: unknown) => error instanceof AllocationError && error.code === "UNKNOWN_ATTENDEE",
   );
-  session.registerAttendee({ lumaGuestId: "guest_ana", telegramUserId: 10, displayName: "Ana" });
+  session.registerAttendee(person("guest_ana", 10, "Ana"));
   assert.throws(
-    () => session.allocate("guest_ana", "fantasma", 1),
+    () => session.setFichitas("guest_ana", "fantasma", 1),
     (error: unknown) => error instanceof AllocationError && error.code === "UNKNOWN_PROJECT",
   );
   assert.throws(
-    () => session.allocate("guest_ana", "agua", 0),
+    () => session.setFichitas("guest_ana", "agua", -1),
     (error: unknown) => error instanceof AllocationError && error.code === "INVALID_AMOUNT",
   );
   assert.throws(
-    () => session.allocate("guest_ana", "agua", 1.5),
+    () => session.setFichitas("guest_ana", "agua", 1.5),
     (error: unknown) => error instanceof AllocationError && error.code === "INVALID_AMOUNT",
   );
 });
 
 test("la aprobación humana cierra la votación", () => {
   const session = sessionWithProjects();
-  session.registerAttendee({ lumaGuestId: "guest_ana", telegramUserId: 10, displayName: "Ana" });
-  session.allocate("guest_ana", "agua", 10);
+  session.registerAttendee(person("guest_ana", 10, "Ana"));
+  session.setFichitas("guest_ana", "agua", 10);
+  assert.throws(
+    () => session.approve(),
+    (error: unknown) => error instanceof AllocationError && error.code === "VOTING_OPEN",
+  );
+  session.closeVoting();
+  assert.throws(
+    () => session.setFichitas("guest_ana", "residuos", 10),
+    (error: unknown) => error instanceof AllocationError && error.code === "VOTING_CLOSED",
+  );
   session.approve();
   assert.equal(session.isApproved(), true);
   assert.throws(
-    () => session.allocate("guest_ana", "residuos", 10),
+    () => session.setFichitas("guest_ana", "residuos", 10),
     (error: unknown) => error instanceof AllocationError && error.code === "SESSION_FROZEN",
   );
   assert.throws(
-    () => session.registerAttendee({ lumaGuestId: "guest_beto", telegramUserId: 11, displayName: "Beto" }),
+    () => session.registerAttendee(person("guest_beto", 11, "Beto")),
     (error: unknown) => error instanceof AllocationError && error.code === "SESSION_FROZEN",
   );
   assert.throws(
@@ -102,10 +119,10 @@ test("la aprobación humana cierra la votación", () => {
 
 test("dos asistentes suman fichitas y el pozo se parte a la mitad", () => {
   const session = sessionWithProjects();
-  session.registerAttendee({ lumaGuestId: "guest_ana", telegramUserId: 10, displayName: "Ana" });
-  session.registerAttendee({ lumaGuestId: "guest_beto", telegramUserId: 11, displayName: "Beto" });
-  session.allocate("guest_ana", "agua", 40);
-  session.allocate("guest_beto", "residuos", 40);
+  session.registerAttendee(person("guest_ana", 10, "Ana"));
+  session.registerAttendee(person("guest_beto", 11, "Beto"));
+  session.setFichitas("guest_ana", "agua", 40);
+  session.setFichitas("guest_beto", "residuos", 40);
 
   const lines = session.plan();
   assert.equal(lines.length, 2);

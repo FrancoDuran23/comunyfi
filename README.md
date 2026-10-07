@@ -1,86 +1,139 @@
 # Comunyfi
 
-Pozo comunitario en wARS para la gente de [jujuy.dev](https://jujuy.dev). Es un esqueleto en TypeScript para el hackathon **Agents on Open Rails**, track **Stable Agents: LatAm** (Ripio × Celo).
+Pozo comunitario en wARS para la gente de [jujuy.dev](https://jujuy.dev). Proyecto para el hackathon **Agents on Open Rails**, track **Stable Agents: LatAm** (Ripio × Celo).
 
-Un agente custodia el pozo en su wallet de Celo. En un evento en vivo, quien hizo check-in en Luma recibe fichitas por Telegram, las reparte entre proyectos que atacan un problema local, y un tablero se proyecta con el recuento. Después de una aprobación humana, el agente paga en wARS, en proporción a las fichitas.
+Un agente custodia el pozo en su wallet de Celo. En el evento, quien hizo check-in en Luma recibe fichitas por Telegram, las reparte entre proyectos que atacan un problema local, y un tablero se proyecta con el recuento. Después de cerrar la votación y de una aprobación humana, el agente paga en wARS, en proporción a las fichitas.
 
-## Cómo funciona
+## Runbook del evento
 
-1. El pozo (en el ejemplo, ARS 50.000) está en wARS en la wallet del agente. wARS es el peso de Ripio en Celo: `0x0dc4f92879b7670e5f4e4e6e3c801d229129d90d`, 18 decimales.
-2. Cada asistente verifica su check-in de Luma con el bot (`/vincular`). El esqueleto todavía no llama a la API de Luma: usa una lista o, en demo, ids `guest_<nombre>`.
-3. Recibe un presupuesto de fichitas (100) con un tope por proyecto (40). Así nadie pone todo en una sola propuesta.
-4. `/asignar agua 20` suma fichitas. El tablero (`npm run board` o `npm run live`) se refresca solo para el proyector.
-5. La organización manda `/aprobar`. Recién ahí `/pagar` arma las transferencias ERC-20. Con `PAYOUT_DRY_RUN=true` no se envía nada.
+Hace falta Node 22 (usa `node:sqlite`).
 
-## Anti-abuso
+### 1. Crear el bot
 
-- Un invitado de Luma, una vez. Un Telegram, una vez. No se pueden vincular cruzados.
-- Presupuesto fijo y tope por proyecto.
-- La votación se cierra cuando hay aprobación. No entra nadie más ni se cambian fichitas.
-- El pago real rechaza las direcciones de relleno (`0x000…0001`, etc.).
-- Sin `AGENT_PRIVATE_KEY` no hay firma. El modo dry-run es el default.
+1. En Telegram, abrí [@BotFather](https://t.me/BotFather).
+2. Mandá `/newbot`.
+3. Nombre visible: `Comunyfi`. Usuario: uno libre que termine en `bot`, por ejemplo `comunyfi_jujuy_bot`.
+4. BotFather te da un token. Copialo. No lo subas a GitHub.
+5. Escribile `/start` a tu bot una vez que esté corriendo. Te responde con tu id numérico. Ese número va en `ADMIN_TELEGRAM_IDS`. Si hay más de una persona de la organización, separá los ids con coma.
 
-## Etiqueta de atribución
+Al arrancar, el bot publica los comandos solo. No hace falta cargarlos a mano en BotFather.
 
-Cada `transfer` de wARS lleva el sufijo ERC-8021 de `@celo/attribution-tags`, derivado del repo con `codeFromRepo`:
-
-`FrancoDuran23/comunyfi` → `celo_40ea7bdf091f`
-
-Celo mainnet (`chainId` 42220, RPC `https://forno.celo.org`). La etiqueta tiene que estar antes de la primera transacción que quieras que cuente en el hackathon.
-
-## Qué falta a propósito
-
-- **Luma:** `src/luma/checkin.ts` no pega a la API. Hay que reemplazar el validador por el check-in real del evento.
-- **ERC-8004:** `src/identity/erc8004.ts` solo lee las variables. El agent id se registra aparte (8004scan) y es obligatorio para el track.
-- **x402:** `src/payments/x402.ts` describe una cotización en wARS contra el facilitador de Celo. No firma ni liquida.
-
-## Cómo correrlo
-
-Hace falta Node 20 o más.
+### 2. Configurar el entorno
 
 ```bash
 cp .env.example .env
 npm install
-npm test
-npm start
 ```
 
-`npm start` imprime la etiqueta, el pozo y una transferencia de ejemplo. No manda nada a la red.
+Completá en `.env`, y en ningún otro lado:
+
+| Variable | Quién la tiene | Para qué |
+| --- | --- | --- |
+| `TELEGRAM_BOT_TOKEN` | BotFather | El bot no arranca sin esto |
+| `ADMIN_TELEGRAM_IDS` | El `/start` del bot | Quién puede armar la ronda y pagar |
+| `LUMA_API_KEY` | [luma.com/calendar/manage/api-keys](https://luma.com/calendar/manage/api-keys) | Check-in real. La key es del calendario y pide Luma Plus |
+| `LUMA_EVENT_ID` | La URL o el dashboard del evento, empieza con `evt-` | El evento de esa noche |
+| `AGENT_PRIVATE_KEY` | La wallet que tiene el pozo | Solo para un pago real |
+| `PAYOUT_DRY_RUN` | Vos | `true` ensaya. `false` manda wARS |
+| `AGENT_WALLET` | La misma wallet, si todavía no querés pegar la clave | Para que `/pozo` muestre el saldo |
+
+Sin `LUMA_API_KEY`, el bot usa `LUMA_GUESTS_FILE` (CSV o JSON con `email,name,guestId,checkedIn`). El ejemplo está en `data/guests.example.json`: `ana@jujuy.dev` ya figura con check-in.
+
+### 3. Ensayo, sin token y sin Luma
 
 ```bash
-npm run board   # tablero en http://127.0.0.1:3000/
-npm run bot     # bot de Telegram (pide TELEGRAM_BOT_TOKEN)
-npm run live    # tablero y bot en el mismo proceso, misma votación
+npm test
+npm start
+npm run board
 ```
 
-Comandos del bot: `/vincular`, `/proyectos`, `/fichitas`, `/asignar`, `/tablero`. Quienes estén en `ADMIN_TELEGRAM_IDS` también tienen `/aprobar` y `/pagar`.
+`npm test` no habla con Telegram ni con Luma: simula la API. `npm start` imprime la etiqueta y una transferencia de 1 wARS, y no la envía. El tablero queda en `http://127.0.0.1:3000/` y se refresca solo.
 
-Para ensayar sin Luma, dejá `LUMA_ALLOW_PLACEHOLDER=true` y usá `/vincular guest_ana`. En el evento poné ese flag en `false` y completá `LUMA_CHECKED_IN_GUESTS` (hasta que exista la API).
+### 4. La noche del evento
 
-Los proyectos de muestra están en `data/projects.example.json`. Cambiá `recipient` por la wallet de cada equipo antes de un pago real, y `SEED_DEMO=false` si cargás `PROJECTS_FILE` con la ronda de verdad.
+```bash
+npm run live
+```
 
-## Variables
+Eso levanta el tablero y el bot en el mismo proceso, con la misma base SQLite (`data/comunyfi.sqlite`). Si se corta la luz y reiniciás, los votos siguen.
 
-Están documentadas en `.env.example`. No hay secretos en el repo. `AGENT_PRIVATE_KEY` y `TELEGRAM_BOT_TOKEN` se completan solo en tu `.env`.
+En el proyector, abrí `http://127.0.0.1:3000/`.
+
+Por Telegram, como organización:
+
+1. `/ronda` muestra la ronda. Si no hay, `/ronda nueva jujuy.dev`.
+2. Cargá cada proyecto: `/proyecto agua | Agua en barrios altos | Cisternas comunitarias | 0xWALLET`.
+3. Si te equivocaste: `/editar agua | Nombre | Resumen | 0xWALLET`.
+4. `/abrir` habilita las fichitas. `/cerrar` las congela.
+5. `/resultados` y el proyector muestran el mismo recuento.
+6. `/previsualizar` arma el reparto y no manda nada.
+7. `/aprobar` con `PAYOUT_DRY_RUN=true` (el default) ensaya y te muestra la etiqueta `celo_40ea7bdf091f`.
+8. Para pagar de verdad: `PAYOUT_DRY_RUN=false`, `AGENT_PRIVATE_KEY` cargada, reiniciá `npm run live`, `/aprobar` y después `/aprobar CONFIRMAR` dentro de 5 minutos. El bot responde con los links de Celoscan.
+
+Cada asistente:
+
+1. `/start`
+2. Manda el mail con el que se anotó en Luma. Tiene que figurar con check-in (`checked_in_at` en la API, o `checkedIn: true` en el archivo).
+3. `/proyectos` y toca un proyecto. El teclado pone 10, 20, 30 o 40 fichitas, o las saca. El número reemplaza lo anterior.
+4. `/fichitas` muestra su resumen. `/pozo` muestra wARS y CELO de gas de la wallet del agente.
+
+## Anti-abuso
+
+- Un mail de Luma, un Telegram. Un Telegram, un mail. No se cruzan.
+- 100 fichitas por persona y 40 como máximo en un mismo proyecto. Reasignar reemplaza, no suma encima del tope.
+- Sin check-in no hay fichitas. Sin votación abierta no se pueden mover.
+- Cerrar la votación congela el reparto. El pago real rechaza direcciones de relleno (`0x000…0001`).
+- Un pago que llega a salir queda anotado: no se vuelve a mandar a esa wallet si reintentás.
+
+## Etiqueta de atribución
+
+Cada `transfer` de wARS lleva el sufijo ERC-8021 de `@celo/attribution-tags`, derivado con `codeFromRepo`:
+
+`FrancoDuran23/comunyfi` → `celo_40ea7bdf091f`
+
+Celo mainnet (`chainId` 42220, RPC `https://forno.celo.org`). wARS: `0x0dc4f92879b7670e5f4e4e6e3c801d229129d90d`, 18 decimales.
+
+## Qué está mockeado en este repo
+
+Acá no hay token de Telegram ni API key de Luma, y no se mandó ninguna transacción.
+
+- Los tests del bot usan grammY con la API interceptada. No llaman a `api.telegram.org`.
+- Luma se prueba con un `fetch` falso y con `data/guests.example.json`. El cliente real está en `src/luma/checkin.ts` y pega a `GET /v1/events/guests/get` cuando existen `LUMA_API_KEY` y `LUMA_EVENT_ID`.
+- El pago real usa viem, pero el default es dry-run. Sin `AGENT_PRIVATE_KEY` no hay firma.
+- ERC-8004 y x402 siguen siendo placeholders. El agent id hay que registrarlo aparte (8004scan) para que el track sea válido.
+
+## Qué tiene que pasar Franco para correrlo en vivo
+
+1. El token de BotFather (`TELEGRAM_BOT_TOKEN`).
+2. Su id de Telegram y el de quien más administre (`ADMIN_TELEGRAM_IDS`).
+3. `LUMA_API_KEY` del calendario y el `LUMA_EVENT_ID` (`evt-…`) de la noche. Si Luma Plus no llega, un CSV exportado con mail, nombre, id y si ya hizo check-in.
+4. Las wallets de cada proyecto, en lugar de las de relleno.
+5. La clave de la wallet del pozo, recién cuando quieran pagar (`AGENT_PRIVATE_KEY`) y `PAYOUT_DRY_RUN=false`.
+6. Un poco de CELO en esa wallet para el gas. `/pozo` lo muestra si la dirección está configurada.
 
 ## Scripts
 
 | Script | Qué hace |
 | --- | --- |
-| `npm test` | Tests de fichitas, topes, reparto, etiqueta y dry-run |
+| `npm test` | Fichitas, Luma simulado, bot simulado, dry-run y persistencia |
 | `npm run typecheck` | TypeScript estricto |
 | `npm run build` | Compila a `dist/` |
 | `npm start` | Resumen y vista previa, sin enviar |
-| `npm run live` | Tablero + bot con el estado compartido |
+| `npm run live` | Tablero + bot, mismo estado |
+| `npm run board` | Solo el proyector |
+| `npm run bot` | Solo el bot |
+
+Para correr lo compilado: `node --experimental-sqlite dist/live.js`.
 
 ## Estructura
 
 ```
-src/voting/        fichitas, topes y reparto proporcional
-src/wallet/        transfer de wARS con etiqueta, dry-run y saldo
-src/telegram/      bot grammY
-src/luma/          stub de check-in
+src/telegram/      bot grammY, comandos y teclados
+src/voting/        fichitas, topes y reparto
+src/store/         SQLite de la ronda
+src/luma/          API de Luma y archivo local
+src/wallet/        transfer de wARS con etiqueta, dry-run y saldos
+src/projector/     tablero
 src/identity/      stub ERC-8004
 src/payments/      stub x402
-src/projector/     tablero para el proyector
 ```

@@ -12,6 +12,7 @@ test("la config de ejemplo no exige secretos y el resumen no los muestra", () =>
   const config = loadConfig({
     AGENT_PRIVATE_KEY: `0x${"11".repeat(32)}`,
     TELEGRAM_BOT_TOKEN: "123:secreto",
+    LUMA_API_KEY: "secreto-luma",
     POOL_AMOUNT_WARS: "50000",
     PAYOUT_DRY_RUN: "true",
   });
@@ -26,6 +27,7 @@ test("la config de ejemplo no exige secretos y el resumen no los muestra", () =>
 
   const summary = JSON.stringify(configSummary(config));
   assert.equal(summary.includes("secreto"), false);
+  assert.equal(summary.includes("secreto-luma"), false);
   assert.equal(summary.includes("0x1111"), false);
   assert.equal(configSummary(config).signerConfigured, true);
 });

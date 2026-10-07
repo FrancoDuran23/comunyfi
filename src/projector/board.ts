@@ -1,9 +1,27 @@
 import { createServer, type Server } from "node:http";
 import { formatWars } from "../format.js";
 import type { Session } from "../voting/session.js";
+import type { RoundStatus } from "../voting/types.js";
+
+export function roundStatusLabel(status: RoundStatus | null): string {
+  switch (status) {
+    case "draft":
+      return "Armando la ronda";
+    case "open":
+      return "Votación abierta";
+    case "closed":
+      return "Votación cerrada";
+    case "paid":
+      return "Pozo pagado";
+    default:
+      return "Sin ronda";
+  }
+}
 
 export interface BoardPayload {
   title: string;
+  status: RoundStatus | null;
+  statusLabel: string;
   approved: boolean;
   attendees: number;
   pool: string;
@@ -26,8 +44,11 @@ function escapeHtml(value: string): string {
 }
 
 export function boardPayload(session: Session): BoardPayload {
+  const status = session.votingStatus();
   return {
     title: "Comunyfi · jujuy.dev",
+    status,
+    statusLabel: roundStatusLabel(status),
     approved: session.isApproved(),
     attendees: session.listAttendees().length,
     pool: formatWars(session.config.poolAmount),
@@ -44,7 +65,7 @@ export function boardPayload(session: Session): BoardPayload {
 
 export function renderTextBoard(session: Session): string {
   const payload = boardPayload(session);
-  const header = payload.approved ? "APROBADO" : "EN VOTACIÓN";
+  const header = payload.statusLabel.toUpperCase();
   const lines = [
     `Comunyfi · ${header}`,
     `Pozo ${payload.pool} · ${payload.attendees} asistentes`,
@@ -74,7 +95,7 @@ export function renderHtmlBoard(session: Session): string {
   const payload = boardPayload(session);
   const maxFichitas = payload.rows.reduce((max, row) => Math.max(max, row.fichitas), 0);
   const cards = payload.rows.map((row) => rowHtml(row, maxFichitas)).join("\n");
-  const status = payload.approved ? "Pozo aprobado" : "Votación abierta";
+  const status = payload.statusLabel;
   return `<!DOCTYPE html>
 <html lang="es">
 <head>

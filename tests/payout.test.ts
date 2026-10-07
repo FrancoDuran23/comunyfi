@@ -112,13 +112,18 @@ test("el plan aprobado de la sesión se puede previsualizar sin firmar", async (
     summary: "Cisternas",
     recipient: placeholder,
   });
-  session.registerAttendee({ lumaGuestId: "guest_ana", telegramUserId: 1, displayName: "Ana" });
-  session.allocate("guest_ana", "agua", 10);
-  session.approve();
+  session.registerAttendee({
+    lumaGuestId: "guest_ana",
+    email: "ana@jujuy.dev",
+    telegramUserId: 1,
+    displayName: "Ana",
+  });
+  session.setFichitas("guest_ana", "agua", 10);
+  session.closeVoting();
 
   const outcome = await executePayout({
     lines: session.plan(),
-    approved: session.isApproved(),
+    approved: true,
     dryRun: true,
   });
   assert.equal(outcome.transfers[0]?.amount, 100n);

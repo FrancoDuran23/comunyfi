@@ -106,11 +106,16 @@ export function toSendable(prepared: PreparedWarsTransfer): SendableTransfer {
   };
 }
 
+export function celoscanTxUrl(hash: Hash): string {
+  return `https://celoscan.io/tx/${hash}`;
+}
+
 export interface ExecutePayoutInput {
   lines: readonly PayoutLine[];
   approved: boolean;
   dryRun: boolean;
   sender?: PayoutSender;
+  onSent?: (hash: Hash, transfer: PreparedWarsTransfer) => void;
 }
 
 /**
@@ -160,7 +165,9 @@ export async function executePayout(input: ExecutePayoutInput): Promise<PayoutOu
 
   const hashes: Hash[] = [];
   for (const transfer of transfers) {
-    hashes.push(await input.sender.send(toSendable(transfer)));
+    const hash = await input.sender.send(toSendable(transfer));
+    hashes.push(hash);
+    input.onSent?.(hash, transfer);
   }
 
   return {
