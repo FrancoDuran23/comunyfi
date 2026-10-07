@@ -32,6 +32,26 @@ test("la config de ejemplo no exige secretos y el resumen no los muestra", () =>
   assert.equal(configSummary(config).signerConfigured, true);
 });
 
+test("el webhook exige secreto y el resumen no lo muestra", () => {
+  assert.throws(() => loadConfig({ WEBHOOK_URL: "https://comunyfi.alwaysdata.net" }), /WEBHOOK_SECRET/);
+  const config = loadConfig({
+    WEBHOOK_URL: "https://comunyfi.alwaysdata.net/",
+    WEBHOOK_SECRET: "secreto-webhook",
+    IP: "10.0.0.8",
+    PORT: "8100",
+  });
+  assert.equal(config.webhookUrl, "https://comunyfi.alwaysdata.net");
+  assert.equal(config.webhookSecret, "secreto-webhook");
+  assert.equal(config.bindHost, "10.0.0.8");
+  assert.equal(config.port, 8100);
+  const summary = JSON.stringify(configSummary(config));
+  assert.equal(summary.includes("secreto-webhook"), false);
+  assert.equal(configSummary(config).webhook, true);
+  assert.equal(configSummary(config).bindHost, "10.0.0.8");
+  assert.equal(loadConfig({}).webhookUrl, null);
+  assert.equal(loadConfig({}).bindHost, null);
+});
+
 test("rechaza otra red, otro token y un tope imposible", () => {
   assert.throws(() => loadConfig({ CELO_CHAIN_ID: "44787" }), /42220/);
   assert.throws(() => loadConfig({ WARS_TOKEN_ADDRESS: "0x0000000000000000000000000000000000000001" }), /wARS/i);

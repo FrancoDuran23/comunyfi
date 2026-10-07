@@ -33,6 +33,12 @@ export interface AppConfig {
   projectsFile: string | null;
   seedDemo: boolean;
   port: number;
+  /** Origen público (sin path). Vacío = long polling, para desarrollo local. */
+  webhookUrl: string | null;
+  /** Segmento `/telegram/<secreto>` y header `X-Telegram-Bot-Api-Secret-Token`. */
+  webhookSecret: string | null;
+  /** `IP` de alwaysdata. Vacío = todas las interfaces. */
+  bindHost: string | null;
 }
 
 function optional(value: string | undefined): string | null {
@@ -79,6 +85,28 @@ function parseAddress(value: string | undefined, name: string): Address | null {
   if (!raw) return null;
   if (!isAddress(raw)) throw new Error(`${name} no es una dirección`);
   return getAddress(raw);
+}
+
+function webhookSettings(env: NodeJS.ProcessEnv): { webhookUrl: string | null; webhookSecret: string | null } {
+  const webhookSecret = optional(env.WEBHOOK_SECRET);
+  const rawUrl = optional(env.WEBHOOK_URL);
+  if (webhookSecret && !/^[A-Za-z0-9_-]{1,256}$/.test(webhookSecret)) {
+    throw new Error("WEBHOOK_SECRET debe tener entre 1 y 256 caracteres (A-Z, a-z, 0-9, _ o -)");
+  }
+  if (!rawUrl) return { webhookUrl: null, webhookSecret };
+  if (!webhookSecret) {
+    throw new Error("WEBHOOK_SECRET es obligatorio cuando WEBHOOK_URL está definido");
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error("WEBHOOK_URL no es una URL");
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error("WEBHOOK_URL tiene que ser http o https");
+  }
+  return { webhookUrl: rawUrl.replace(/\/+$/, ""), webhookSecret };
 }
 
 function parseAgentId(value: string | undefined): bigint | null {
@@ -143,6 +171,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     projectsFile: optional(env.PROJECTS_FILE),
     seedDemo: flag(env.SEED_DEMO, true),
     port: positiveInt(env.PORT, 3000, "PORT"),
+    ...webhookSettings(env),
+    bindHost: optional(env.IP),
   };
 }
 
@@ -166,5 +196,7 @@ export function configSummary(config: AppConfig): Record<string, string | number
           : "sin-configurar",
     databasePath: config.databasePath,
     port: config.port,
+    webhook: config.webhookUrl !== null,
+    bindHost: config.bindHost ?? "todas",
   };
 }

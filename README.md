@@ -6,7 +6,7 @@ Un agente custodia el pozo en su wallet de Celo. En el evento, quien hizo check-
 
 ## Runbook del evento
 
-Hace falta Node 22 (usa `node:sqlite`).
+Hace falta Node 22.5 o más (usa `node:sqlite`). El archivo `.nvmrc` fija la 22.
 
 ### 1. Crear el bot
 
@@ -119,11 +119,45 @@ Acá no hay token de Telegram ni API key de Luma, y no se mandó ninguna transac
 | `npm run typecheck` | TypeScript estricto |
 | `npm run build` | Compila a `dist/` |
 | `npm start` | Resumen y vista previa, sin enviar |
-| `npm run live` | Tablero + bot, mismo estado |
+| `npm run live` | Tablero + bot en long polling, para tu máquina |
+| `npm run start:prod` | Lo mismo, ya compilado, sin tsx. En alwaysdata es el comando del sitio |
 | `npm run board` | Solo el proyector |
-| `npm run bot` | Solo el bot |
+| `npm run bot` | Solo el bot, en long polling |
 
-Para correr lo compilado: `node --experimental-sqlite dist/live.js`.
+`npm run build` deja `dist/live.js`. `npm run start:prod` lo corre con `node --experimental-sqlite --disable-warning=ExperimentalWarning`.
+
+## Hosting en alwaysdata
+
+El plan Free tiene disco de verdad y Node 22, pero el sitio se apaga cuando nadie lo usa y las condiciones no permiten un proceso siempre prendido. El long polling de Telegram (`getUpdates`) es un proceso así, así que en alwaysdata no va. En tu máquina, sin `WEBHOOK_URL`, `npm run live` sigue en long polling.
+
+En el panel, sitio tipo **Node.js**:
+
+| Campo | Valor |
+| --- | --- |
+| Comando | `npm run start:prod` |
+| Directorio de trabajo | la raíz del repo |
+| `NODEJS_VERSION` | `22` |
+| Tiempo de inactividad | `0` (se duerme; el webhook lo despierta) |
+
+Variables de entorno, además de las del runbook:
+
+| Variable | Valor |
+| --- | --- |
+| `WEBHOOK_URL` | El origen público https que te da alwaysdata, sin path y sin barra final. Ejemplo: `https://comunyfi.alwaysdata.net` |
+| `WEBHOOK_SECRET` | Un string largo al azar: letras, números, `_` y `-`, hasta 256 caracteres |
+| `IP` y `PORT` | Las pone alwaysdata. No las escribas a mano. Si `IP` está, el proceso escucha solo ahí; si no, en todas las interfaces |
+
+Al arrancar con `WEBHOOK_URL`, el proceso publica los comandos y registra el webhook en `${WEBHOOK_URL}/telegram/${WEBHOOK_SECRET}` con `secret_token` igual a `WEBHOOK_SECRET`. No llama a `bot.start()`. El mismo servidor del tablero atiende `POST /telegram/<secreto>` (grammY, adaptador `http`, chequea el header) antes del 405 del resto de los POST.
+
+Para actualizar el sitio:
+
+```bash
+git pull
+npm ci
+npm run build
+```
+
+Después reiniciá el sitio desde el panel.
 
 ## Estructura
 

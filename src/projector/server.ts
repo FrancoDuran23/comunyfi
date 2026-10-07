@@ -13,6 +13,7 @@ function isDirectRun(): boolean {
 if (isDirectRun()) {
   const config = loadConfig();
   const app = await createApp(config);
-  startBoardServer(app.session, config.port);
-  console.log(`Tablero de Comunyfi en http://127.0.0.1:${config.port}/`);
+  startBoardServer(app.session, config.port, { host: config.bindHost ?? undefined });
+  const where = config.bindHost ? `${config.bindHost}:${config.port}` : `http://127.0.0.1:${config.port}/`;
+  console.log(`Tablero de Comunyfi en ${where}`);
 }
