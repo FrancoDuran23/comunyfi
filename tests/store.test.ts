@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { getAddress } from "viem";
-import { openStoredSession } from "../src/voting/session.js";
+import { openStoredSession } from "../src/voting/node-session.js";
 
 test("un reinicio no pierde la ronda ni las fichitas", () => {
   const path = join(mkdtempSync(join(tmpdir(), "comunyfi-")), "ronda.sqlite");

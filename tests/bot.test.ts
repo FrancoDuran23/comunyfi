@@ -4,7 +4,7 @@ import { getAddress } from "viem";
 import { Bot } from "grammy";
 import { createGuestListValidator } from "../src/luma/checkin.js";
 import { createComunyfiBot } from "../src/telegram/bot.js";
-import { createSession } from "../src/voting/session.js";
+import { createSession } from "../src/voting/node-session.js";
 
 interface Sent {
   method: string;

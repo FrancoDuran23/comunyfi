@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { getAddress, parseUnits, type Address } from "viem";
 import { planPayouts } from "../src/voting/allocation.js";
-import { createSession } from "../src/voting/session.js";
+import { createSession } from "../src/voting/node-session.js";
 import { AllocationError, type Attendee, type Project, type SessionConfig } from "../src/voting/types.js";
 
 const pool = parseUnits("50000", 18);

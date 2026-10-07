@@ -1,0 +1,10 @@
+# Copiá a .dev.vars para `npm run worker:dev`. No subas .dev.vars.
+TELEGRAM_BOT_TOKEN=
+WEBHOOK_SECRET=
+SETUP_SECRET=
+ADMIN_TELEGRAM_IDS=
+LUMA_API_KEY=
+LUMA_EVENT_ID=
+AGENT_PRIVATE_KEY=
+# Si falta WEBHOOK_URL, POST /setup usa el origen del request.
+WEBHOOK_URL=

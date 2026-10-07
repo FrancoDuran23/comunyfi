@@ -123,10 +123,96 @@ Acá no hay token de Telegram ni API key de Luma, y no se mandó ninguna transac
 | `npm run start:prod` | Lo mismo, ya compilado, sin tsx. En alwaysdata es el comando del sitio |
 | `npm run board` | Solo el proyector |
 | `npm run bot` | Solo el bot, en long polling |
+| `npm run worker:dev` | Worker local con wrangler |
+| `npm run worker:deploy` | Deploy a Cloudflare Workers |
+| `npm run worker:set-webhook` | `POST /setup` del worker ya desplegado |
 
 `npm run build` deja `dist/live.js`. `npm run start:prod` lo corre con `node --experimental-sqlite --disable-warning=ExperimentalWarning`.
 
+## Hosting en Cloudflare Workers
+
+alwaysdata Free pide tarjeta. El deploy va a **Cloudflare Workers Free**, que no. El proceso de Node (`npm run live`, webhook o long polling) queda para tu máquina y para los tests.
+
+El Worker no puede hacer long polling: cada request entra, corre y termina. Telegram pega a `POST /telegram/<WEBHOOK_SECRET>`. grammY lo atiende con `webhookCallback(bot, "cloudflare-mod", { secretToken })`. El mismo fetch sirve el tablero (`/`, `/health`, `/api/tablero`). El estado de la votación vive en **un solo Durable Object** con SQLite (`new_sqlite_classes` en `wrangler.toml`, que es el backend que permite el plan Free). Cada update y cada lectura del tablero entran a esa instancia, así que las fichitas no se parten entre copias.
+
+Los invitados y proyectos de ejemplo van empaquetados en el bundle (`data/guests.example.json` y `data/projects.example.json`). En el Worker no hay disco.
+
+El dry-run es el default (`PAYOUT_DRY_RUN=true`) y tiene que alcanzar para el evento de ensayo: arma el `transfer` de wARS con la etiqueta `celo_40ea7bdf091f` y no firma. Un pago real firma con viem **dentro del request**. En el plan Free el CPU es de **10 ms por invocación** (la espera de red no cuenta). Varias firmas secp256k1 pueden pasarse de ese tope y el request muere con error de CPU. Si pasa, el ensayo igual quedó; el pago en vivo pide el plan de pago de Workers, que sube ese límite.
+
+### 1. Cuenta y credenciales
+
+1. Creá una cuenta en [dash.cloudflare.com](https://dash.cloudflare.com). El plan Free de Workers no pide tarjeta.
+2. El **account id** está en el overview de la cuenta (Workers & Pages también lo muestra). Es un hex de 32 caracteres. No lo subas al repo. Exportalo:
+
+```bash
+export CLOUDFLARE_ACCOUNT_ID=el-id-de-32-caracteres
+```
+
+3. Autenticación, una de las dos:
+
+- `npx wrangler login` (OAuth en el browser). Alcanza para deploy y secretos.
+- Un API token en My Profile → API Tokens → Create Custom Token. Permisos de cuenta:
+  - **Workers Scripts Write** (en la UI nueva: rol **Admin** de Workers la primera vez, porque el script todavía no existe; después alcanza **Editor** para `wrangler deploy` y `wrangler secret put`).
+  - El nombre viejo del mismo permiso es **Workers Scripts Edit**.
+  - No hace falta permiso de zona si publicás en `*.workers.dev` (el default). Si más adelante sumás un dominio propio, sumá **Workers Routes Write** en esa zona.
+
+```bash
+export CLOUDFLARE_API_TOKEN=el-token
+```
+
+### 2. Secretos
+
+Desde la raíz del repo, con la cuenta ya autenticada. El worker tiene que existir, así que si `secret put` dice que no está desplegado, hacé el deploy del paso 3 primero y volvé acá.
+
+```bash
+npx wrangler secret put TELEGRAM_BOT_TOKEN
+npx wrangler secret put WEBHOOK_SECRET
+npx wrangler secret put SETUP_SECRET
+```
+
+Opcionales, solo si los vas a usar:
+
+```bash
+npx wrangler secret put ADMIN_TELEGRAM_IDS
+npx wrangler secret put LUMA_API_KEY
+npx wrangler secret put LUMA_EVENT_ID
+npx wrangler secret put AGENT_PRIVATE_KEY
+```
+
+`WEBHOOK_SECRET`: 1 a 256 caracteres, `A-Z`, `a-z`, `0-9`, `_` o `-`. Es el path y el `secret_token`. `SETUP_SECRET` protege `POST /setup`. `PAYOUT_DRY_RUN` ya está en `true` en `wrangler.toml`. Para local, copiá `.dev.vars.example` a `.dev.vars`.
+
+### 3. Deploy
+
+```bash
+npm install
+npm run worker:deploy
+```
+
+Wrangler imprime la URL, algo como `https://comunyfi.<subdominio>.workers.dev`.
+
+### 4. Webhook
+
+```bash
+export WORKER_URL=https://comunyfi.<subdominio>.workers.dev
+export SETUP_SECRET=el-mismo-del-secret
+npm run worker:set-webhook
+```
+
+Eso hace `POST /setup` con `Authorization: Bearer`. El worker publica los comandos y llama a `setWebhook` con `${WORKER_URL}/telegram/${WEBHOOK_SECRET}`. Si definiste `WEBHOOK_URL` como var, usa esa; si no, el origen del request.
+
+### 5. Chequeo
+
+```bash
+curl "$WORKER_URL/health"
+```
+
+Tiene que responder `ok`. Abrí `$WORKER_URL/` y tenés que ver los cuatro proyectos de ejemplo. En Telegram, `/start` al bot. Si no responde, el webhook no quedó registrado o el secreto no coincide.
+
+Para actualizar: `git pull`, `npm install`, `npm run worker:deploy`. Los secretos se quedan. Volvé a correr `worker:set-webhook` solo si cambió la URL o el `WEBHOOK_SECRET`.
+
 ## Hosting en alwaysdata
+
+Quedó como alternativa de Node. El plan Free pide tarjeta, así que el deploy elegido es Cloudflare, arriba. Si más adelante hay un VPS, este modo sigue valiendo.
 
 El plan Free tiene disco de verdad y Node 22, pero el sitio se apaga cuando nadie lo usa y las condiciones no permiten un proceso siempre prendido. El long polling de Telegram (`getUpdates`) es un proceso así, así que en alwaysdata no va. En tu máquina, sin `WEBHOOK_URL`, `npm run live` sigue en long polling.
 
@@ -168,6 +254,7 @@ src/store/         SQLite de la ronda
 src/luma/          API de Luma y archivo local
 src/wallet/        transfer de wARS con etiqueta, dry-run y saldos
 src/projector/     tablero
+src/worker.ts      entrada de Cloudflare Workers y el Durable Object
 src/identity/      stub ERC-8004
 src/payments/      stub x402
 ```

@@ -1,6 +1,5 @@
 import { getAddress, isAddress } from "viem";
-import type { DatabaseSync } from "node:sqlite";
-import { openDatabase } from "../store/db.js";
+import type { SqlDb } from "../store/sql.js";
 import { planPayouts, standings } from "./allocation.js";
 import {
   AllocationError,
@@ -120,20 +119,12 @@ function asStatus(value: string): RoundStatus {
   return value as RoundStatus;
 }
 
-export function openStoredSession(dbPath: string, defaults: SessionConfig): Session {
+export function sessionFromDb(db: SqlDb, defaults: SessionConfig): Session {
   assertConfig(defaults);
-  const db = openDatabase(dbPath);
   return bindSession(db, defaults);
 }
 
-/** Ronda en memoria, ya abierta, para los tests de fichitas. */
-export function createSession(config: SessionConfig): Session {
-  const session = openStoredSession(":memory:", config);
-  session.ensureRound("ensayo", { status: "open" });
-  return session;
-}
-
-function bindSession(db: DatabaseSync, defaults: SessionConfig): Session {
+function bindSession(db: SqlDb, defaults: SessionConfig): Session {
   const readRound = db.prepare(
     "SELECT name, status, pool_amount, fichitas_per_attendee, max_fichitas_per_project FROM round WHERE id = 1",
   );

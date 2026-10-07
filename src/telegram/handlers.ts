@@ -4,7 +4,7 @@ import { formatCelo, formatWars } from "../format.js";
 import { claimFichitas } from "../voting/claim.js";
 import type { Session } from "../voting/session.js";
 import { AllocationError, type Project } from "../voting/types.js";
-import { renderTextBoard, roundStatusLabel } from "../projector/board.js";
+import { renderTextBoard, roundStatusLabel } from "../projector/view.js";
 import { celoscanTxUrl, executePayout, isPlaceholderRecipient, PayoutError, type PayoutSender } from "../wallet/payout.js";
 import type { PoolBalances } from "../wallet/balance.js";
 

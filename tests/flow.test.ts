@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { getAddress, type Hash } from "viem";
 import { createGuestListValidator } from "../src/luma/checkin.js";
 import { handleCallback, handleCommand, handlePlainText, type HandlerDeps } from "../src/telegram/handlers.js";
-import { createSession } from "../src/voting/session.js";
+import { createSession } from "../src/voting/node-session.js";
 import { renderHtmlBoard, renderTextBoard, startBoardServer } from "../src/projector/board.js";
 import type { PayoutSender } from "../src/wallet/payout.js";
 import type { PoolBalances } from "../src/wallet/balance.js";

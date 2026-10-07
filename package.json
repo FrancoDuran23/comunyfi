@@ -14,8 +14,11 @@
     "start": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx src/main.ts",
     "start:prod": "node --experimental-sqlite --disable-warning=ExperimentalWarning dist/live.js",
     "live": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx src/live.ts",
-    "bot": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx src/telegram/bot.ts",
-    "board": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx src/projector/server.ts"
+    "bot": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx src/telegram/cli.ts",
+    "board": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx src/projector/server.ts",
+    "worker:dev": "wrangler dev",
+    "worker:deploy": "wrangler deploy",
+    "worker:set-webhook": "node scripts/set-webhook.mjs"
   },
   "dependencies": {
     "@celo/attribution-tags": "^0.5.0",
@@ -26,6 +29,7 @@
   "devDependencies": {
     "@types/node": "^22.18.0",
     "tsx": "^4.20.5",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "wrangler": "^4.42.0"
   }
 }

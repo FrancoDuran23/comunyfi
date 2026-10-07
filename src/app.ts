@@ -9,7 +9,8 @@ import {
 } from "./luma/checkin.js";
 import { demoGuestsPath, loadGuestsFile } from "./luma/guests-file.js";
 import { demoProjectsPath, loadProjectsFile } from "./projects.js";
-import { openStoredSession, type Session } from "./voting/session.js";
+import { openStoredSession } from "./voting/node-session.js";
+import type { Session } from "./voting/session.js";
 import type { HandlerDeps } from "./telegram/handlers.js";
 import { createCeloClient } from "./chain.js";
 import { readPoolBalances } from "./wallet/balance.js";

@@ -1,8 +1,4 @@
-import "dotenv/config";
 import { Bot, InlineKeyboard } from "grammy";
-import { pathToFileURL } from "node:url";
-import { createApp } from "../app.js";
-import { loadConfig } from "../config.js";
 import { handleCallback, handleCommand, handlePlainText, type BotReply, type HandlerDeps } from "./handlers.js";
 
 const COMMANDS = [
@@ -112,12 +108,6 @@ export async function publishCommands(bot: Bot): Promise<void> {
   ]);
 }
 
-function isDirectRun(): boolean {
-  const entry = process.argv[1];
-  if (!entry) return false;
-  return pathToFileURL(entry).href === import.meta.url;
-}
-
 export async function startTelegramBot(deps: HandlerDeps, token: string): Promise<void> {
   const bot = createComunyfiBot(token, deps);
   try {
@@ -126,16 +116,4 @@ export async function startTelegramBot(deps: HandlerDeps, token: string): Promis
     console.error("No pude publicar los comandos en Telegram", error);
   }
   await bot.start();
-}
-
-if (isDirectRun()) {
-  const config = loadConfig();
-  if (!config.telegramBotToken) {
-    console.error("Falta TELEGRAM_BOT_TOKEN. Mirá .env.example.");
-    process.exitCode = 1;
-  } else {
-    const app = await createApp(config);
-    console.log("Bot de Comunyfi escuchando. Dry-run:", config.dryRun, "Luma:", app.handlers.luma.source);
-    await startTelegramBot(app.handlers, config.telegramBotToken);
-  }
 }

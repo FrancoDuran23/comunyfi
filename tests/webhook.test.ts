@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { createClosedValidator } from "../src/luma/checkin.js";
 import { createComunyfiBot } from "../src/telegram/bot.js";
 import { startBoardServer } from "../src/projector/board.js";
-import { createSession } from "../src/voting/session.js";
+import { createSession } from "../src/voting/node-session.js";
 
 const SECRET = "camino-secreto";
 

@@ -5,7 +5,7 @@ import { codeFromRepo, fromDataSuffix } from "@celo/attribution-tags";
 import { decodeFunctionData, erc20Abi, getAddress, type Hash } from "viem";
 import { comunyfiAttributionCode } from "../src/attribution.js";
 import { CELO_CHAIN_ID, WARS_TOKEN_ADDRESS } from "../src/chain.js";
-import { createSession } from "../src/voting/session.js";
+import { createSession } from "../src/voting/node-session.js";
 import {
   executePayout,
   isPlaceholderRecipient,

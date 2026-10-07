@@ -9,7 +9,7 @@ import {
 } from "../src/luma/checkin.js";
 import { parseGuestsCsv } from "../src/luma/guests-file.js";
 import { claimFichitas } from "../src/voting/claim.js";
-import { createSession } from "../src/voting/session.js";
+import { createSession } from "../src/voting/node-session.js";
 import { AllocationError } from "../src/voting/types.js";
 
 const guests = [

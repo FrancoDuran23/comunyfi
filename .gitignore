@@ -6,3 +6,5 @@ dist/
 coverage/
 data/*.sqlite
 data/*.sqlite-*
+.wrangler/
+.dev.vars
