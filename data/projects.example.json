@@ -1,0 +1,26 @@
+[
+  {
+    "id": "agua",
+    "name": "Agua en barrios altos",
+    "summary": "Cisternas comunitarias para las semanas de corte en Alto Comedero.",
+    "recipient": "0x0000000000000000000000000000000000000001"
+  },
+  {
+    "id": "residuos",
+    "name": "Reciclado de barrio",
+    "summary": "Puntos de acopio y pago a recuperadores urbanos en wARS.",
+    "recipient": "0x0000000000000000000000000000000000000002"
+  },
+  {
+    "id": "conectividad",
+    "name": "Internet en el ramal",
+    "summary": "Enlace compartido para escuelas rurales del ramal jujeño.",
+    "recipient": "0x0000000000000000000000000000000000000003"
+  },
+  {
+    "id": "oficio",
+    "name": "Primer oficio",
+    "summary": "Becas cortas de oficio para pibes que salen de la secundaria.",
+    "recipient": "0x0000000000000000000000000000000000000004"
+  }
+]
