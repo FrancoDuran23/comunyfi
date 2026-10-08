@@ -1,0 +1,15 @@
+# Copiá a .dev.vars para `npm run worker:dev`. No subas .dev.vars.
+TELEGRAM_BOT_TOKEN=
+WEBHOOK_SECRET=
+SETUP_SECRET=
+ADMIN_TELEGRAM_IDS=
+LUMA_API_KEY=
+LUMA_EVENT_ID=
+# Dirección pública del pozo. El Worker no firma: no pongas AGENT_PRIVATE_KEY acá.
+AGENT_WALLET=
+# Header x-payout-runner-secret. El mismo valor va en el secreto de GitHub Actions.
+PAYOUT_RUNNER_SECRET=
+# Fine-grained token, Actions: write, solo FrancoDuran23/comunyfi.
+GITHUB_DISPATCH_TOKEN=
+# Si falta WEBHOOK_URL, POST /setup usa el origen del request.
+WEBHOOK_URL=

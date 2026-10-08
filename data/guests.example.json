@@ -1,0 +1,14 @@
+[
+  {
+    "email": "ana@jujuy.dev",
+    "name": "Ana Pérez",
+    "guestId": "gst-ana",
+    "checkedIn": true
+  },
+  {
+    "email": "beto@jujuy.dev",
+    "name": "Beto Sosa",
+    "guestId": "gst-beto",
+    "checkedIn": false
+  }
+]

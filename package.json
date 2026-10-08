@@ -1,0 +1,36 @@
+{
+  "name": "comunyfi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pozo comunitario en wARS sobre Celo, votado con fichitas en eventos jujuy.dev",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
+    "test": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx --test tests/*.test.ts",
+    "start": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx src/main.ts",
+    "start:prod": "node --experimental-sqlite --disable-warning=ExperimentalWarning dist/live.js",
+    "live": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx src/live.ts",
+    "bot": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx src/telegram/cli.ts",
+    "board": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx src/projector/server.ts",
+    "worker:dev": "wrangler dev",
+    "worker:deploy": "wrangler deploy",
+    "worker:set-webhook": "node scripts/set-webhook.mjs",
+    "payout": "node --import tsx scripts/payout-runner.ts"
+  },
+  "dependencies": {
+    "@celo/attribution-tags": "^0.5.0",
+    "dotenv": "^16.6.1",
+    "grammy": "^1.35.0",
+    "viem": "^2.37.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "wrangler": "^4.42.0"
+  }
+}
