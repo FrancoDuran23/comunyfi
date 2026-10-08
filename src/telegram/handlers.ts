@@ -5,6 +5,7 @@ import { claimFichitas } from "../voting/claim.js";
 import type { Session } from "../voting/session.js";
 import { AllocationError, type Project } from "../voting/types.js";
 import { renderTextBoard, roundStatusLabel } from "../projector/view.js";
+import { fallbackHint, PAYOUT_RESULT_WAIT_MS } from "../payout/constants.js";
 import { celoscanTxUrl, executePayout, isPlaceholderRecipient, PayoutError, type PayoutSender } from "../wallet/payout.js";
 import type { PoolBalances } from "../wallet/balance.js";
 
@@ -28,12 +29,20 @@ export interface HandlerDeps {
   luma: LumaValidator;
   adminIds: ReadonlySet<number>;
   dryRun: boolean;
+  /** En el Worker el pago no se firma acá: se guarda el plan y lo manda Actions o la laptop. */
+  remotePayout?: boolean;
+  payoutQueue?: PayoutQueue;
   poolWallet: Address | null;
   sender?: PayoutSender;
   readBalances?: (address: Address) => Promise<PoolBalances>;
 }
 
 const LIVE_CONFIRM_MS = 5 * 60 * 1000;
+
+export interface PayoutQueue {
+  dispatch(idempotencyKey: string): Promise<{ ok: boolean; status: number }>;
+  armFallback(delayMs: number): void;
+}
 
 function isAdmin(deps: HandlerDeps, actor: Actor): boolean {
   return deps.adminIds.has(actor.telegramUserId);
@@ -307,10 +316,72 @@ async function previsualizar(deps: HandlerDeps): Promise<BotReply> {
   }
 }
 
+function unpaidLines(deps: HandlerDeps) {
+  const alreadyPaid = deps.session.livePaidRecipients();
+  return deps.session.plan().filter((line) => line.amount > 0n && !alreadyPaid.has(line.recipient.toLowerCase()));
+}
+
+async function encolarPago(deps: HandlerDeps, adminTelegramId: number): Promise<BotReply> {
+  const queue = deps.payoutQueue;
+  if (!queue) return reply("No hay un runner configurado.");
+  const lines = unpaidLines(deps);
+  if (lines.length === 0) {
+    try {
+      deps.session.completePayout();
+    } catch (error) {
+      if (!(error instanceof AllocationError)) throw error;
+    }
+    return reply("Esos pagos ya salieron. No volví a mandar nada.");
+  }
+  for (const line of lines) {
+    if (isPlaceholderRecipient(line.recipient)) {
+      return reply(`Reemplazá el destinatario de relleno ${line.recipient} antes de un pago real`);
+    }
+  }
+  try {
+    deps.session.beginPayout();
+  } catch (error) {
+    if (error instanceof AllocationError) return reply(error.message);
+    throw error;
+  }
+  const plan = deps.session.ensurePayoutPlan({
+    roundId: 1,
+    adminTelegramId,
+    createdAt: Date.now(),
+    lines,
+  });
+  return despachar(deps, plan.idempotencyKey);
+}
+
+async function redispachar(deps: HandlerDeps): Promise<BotReply> {
+  const plan = deps.session.currentPayoutPlan();
+  if (!deps.payoutQueue || !plan) return reply("No hay un pago en curso.");
+  if (plan.lines.every((line) => line.txHash)) {
+    deps.session.completePayout();
+    return reply("Esos pagos ya salieron. No volví a mandar nada.");
+  }
+  return despachar(deps, plan.idempotencyKey);
+}
+
+async function despachar(deps: HandlerDeps, idempotencyKey: string): Promise<BotReply> {
+  const queue = deps.payoutQueue;
+  if (!queue) return reply("No hay un runner configurado.");
+  const dispatched = await queue.dispatch(idempotencyKey);
+  if (!dispatched.ok) {
+    deps.session.markPayoutFallbackNotified(idempotencyKey);
+    return reply(
+      `Pagando… No pude avisar a GitHub Actions (HTTP ${dispatched.status}). El workflow solo corre cuando está en main. ${fallbackHint()}`,
+    );
+  }
+  queue.armFallback(PAYOUT_RESULT_WAIT_MS);
+  return reply("Pagando…");
+}
+
 async function aprobar(deps: HandlerDeps, actor: Actor, args: string): Promise<BotReply> {
   const status = deps.session.votingStatus();
   if (status === "open") return reply("Cerrá la votación antes de aprobar el pago. /cerrar");
   if (status === "paid") return reply("El pozo ya se pagó.");
+  if (status === "paying" && deps.payoutQueue) return redispachar(deps);
   if (status !== "closed") return reply("Abrí y cerrá la votación antes de aprobar el pago.");
 
   const confirm = args.trim().toUpperCase() === "CONFIRMAR";
@@ -325,6 +396,8 @@ async function aprobar(deps: HandlerDeps, actor: Actor, args: string): Promise<B
     const pending = deps.session.takePending(actor.telegramUserId, "live_payout");
     if (!pending) return reply("No hay un pago esperando confirmación, o se venció. Mandá /aprobar de nuevo.");
   }
+
+  if (!deps.dryRun && deps.payoutQueue) return encolarPago(deps, actor.telegramUserId);
 
   const alreadyPaid = deps.session.livePaidRecipients();
   const lines = deps.session.plan().filter((line) => !alreadyPaid.has(line.recipient.toLowerCase()));
@@ -359,7 +432,11 @@ async function aprobar(deps: HandlerDeps, actor: Actor, args: string): Promise<B
     if (outcome.dryRun) {
       const detail = outcome.transfers.map((transfer) => `${transfer.recipient}\n  ${formatWars(transfer.amount)}`).join("\n");
       return reply(
-        `Ensayo de /aprobar. No salió nada a Celo.\nEtiqueta ${outcome.attributionCode}\n\n${detail}\n\nPara mandarlo de verdad: PAYOUT_DRY_RUN=false, AGENT_PRIVATE_KEY, y /aprobar CONFIRMAR.`,
+        `Ensayo de /aprobar. No salió nada a Celo.\nEtiqueta ${outcome.attributionCode}\n\n${detail}\n\n${
+          deps.remotePayout
+            ? "Para mandarlo de verdad: PAYOUT_DRY_RUN=false en el Worker y en el repo, y /aprobar CONFIRMAR."
+            : "Para mandarlo de verdad: PAYOUT_DRY_RUN=false, AGENT_PRIVATE_KEY, y /aprobar CONFIRMAR."
+        }`,
       );
     }
     deps.session.approve();

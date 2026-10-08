@@ -13,7 +13,7 @@ export interface Project {
   recipient: Address;
 }
 
-export type RoundStatus = "draft" | "open" | "closed" | "paid";
+export type RoundStatus = "draft" | "open" | "closed" | "paying" | "paid";
 
 export interface Attendee {
   lumaGuestId: string;

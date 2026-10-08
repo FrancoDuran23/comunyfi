@@ -5,6 +5,6 @@
     "noEmit": true,
     "resolveJsonModule": true
   },
-  "include": ["src", "tests", "data"],
+  "include": ["src", "tests", "data", "scripts"],
   "exclude": ["node_modules", "dist"]
 }

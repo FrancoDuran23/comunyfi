@@ -10,6 +10,8 @@ export function roundStatusLabel(status: RoundStatus | null): string {
       return "Votación abierta";
     case "closed":
       return "Votación cerrada";
+    case "paying":
+      return "Pagando el pozo";
     case "paid":
       return "Pozo pagado";
     default:
@@ -31,6 +33,7 @@ export interface BoardPayload {
     fichitas: number;
     amount: string;
     amountWei: string;
+    txUrl: string | null;
   }>;
 }
 
@@ -44,6 +47,10 @@ function escapeHtml(value: string): string {
 
 export function boardPayload(session: Session): BoardPayload {
   const status = session.votingStatus();
+  const txByProject = new Map<string, string>();
+  for (const payout of session.listLivePayouts()) {
+    if (payout.txHash) txByProject.set(payout.projectId, `https://celoscan.io/tx/${payout.txHash}`);
+  }
   return {
     title: "Comunyfi · jujuy.dev",
     status,
@@ -58,6 +65,7 @@ export function boardPayload(session: Session): BoardPayload {
       fichitas: row.fichitas,
       amount: formatWars(row.amount),
       amountWei: row.amount.toString(),
+      txUrl: txByProject.get(row.projectId) ?? null,
     })),
   };
 }
@@ -87,6 +95,7 @@ function rowHtml(row: BoardPayload["rows"][number], maxFichitas: number): string
       <p>${escapeHtml(row.summary)}</p>
       <div class="bar"><span style="width:${width}%"></span></div>
       <p class="score"><strong>${row.fichitas}</strong> fichitas · ${escapeHtml(row.amount)}</p>
+      ${row.txUrl ? `<p class="score"><a href="${escapeHtml(row.txUrl)}">Celoscan</a></p>` : ""}
     </article>`;
 }
 

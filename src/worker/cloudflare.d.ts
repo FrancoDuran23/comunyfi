@@ -1,6 +1,8 @@
 declare module "cloudflare:workers" {
   export interface DurableObjectState {
     storage: {
+      setAlarm(scheduledTime: number | Date): Promise<void>;
+      deleteAlarm(): Promise<void>;
       sql: {
         exec(
           query: string,

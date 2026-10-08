@@ -1,0 +1,45 @@
+# El workflow_dispatch solo existe en la rama por defecto. Hasta que este archivo
+# esté en main, GitHub responde 404 y el bot pide el fallback de la laptop.
+name: payout
+
+on:
+  workflow_dispatch:
+    inputs:
+      idempotency_key:
+        description: Clave del plan pendiente
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: comunyfi-payout
+  cancel-in-progress: false
+
+jobs:
+  payout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Pay
+        env:
+          AGENT_PRIVATE_KEY: ${{ secrets.AGENT_PRIVATE_KEY }}
+          PAYOUT_RUNNER_SECRET: ${{ secrets.PAYOUT_RUNNER_SECRET }}
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          PAYOUT_DRY_RUN: ${{ vars.PAYOUT_DRY_RUN }}
+          GAS_DROP: ${{ vars.GAS_DROP }}
+          GAS_DROP_CELO: ${{ vars.GAS_DROP_CELO }}
+          PAYOUT_FEE_CURRENCY: ${{ vars.PAYOUT_FEE_CURRENCY }}
+          PAYOUT_IDEMPOTENCY_KEY: ${{ inputs.idempotency_key }}
+          CELO_RPC_URL: https://forno.celo.org
+        run: npm run payout

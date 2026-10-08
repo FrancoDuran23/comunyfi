@@ -15,12 +15,27 @@ export class ComunyfiState extends DurableObject<WorkerEnv> {
 
   async fetch(request: Request): Promise<Response> {
     try {
-      this.#room ??= openWorkerRoom(this.env, wrapDurableSql(this.ctx.storage.sql));
-      return await this.#room.handle(request);
+      return await this.room().handle(request);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Error";
       return new Response(message, { status: 500, headers: { "content-type": "text/plain; charset=utf-8" } });
     }
+  }
+
+  async alarm(): Promise<void> {
+    await this.room().notifyStale(Date.now());
+  }
+
+  private room(): WorkerRoom {
+    this.#room ??= openWorkerRoom(this.env, wrapDurableSql(this.ctx.storage.sql), {
+      setAlarm: (atMs) => {
+        void this.ctx.storage.setAlarm(atMs);
+      },
+      deleteAlarm: () => {
+        void this.ctx.storage.deleteAlarm();
+      },
+    });
+    return this.#room;
   }
 }
 

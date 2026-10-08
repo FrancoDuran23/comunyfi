@@ -68,7 +68,7 @@ Por Telegram, como organización:
 5. `/resultados` y el proyector muestran el mismo recuento.
 6. `/previsualizar` arma el reparto y no manda nada.
 7. `/aprobar` con `PAYOUT_DRY_RUN=true` (el default) ensaya y te muestra la etiqueta `celo_40ea7bdf091f`.
-8. Para pagar de verdad: `PAYOUT_DRY_RUN=false`, `AGENT_PRIVATE_KEY` cargada, reiniciá `npm run live`, `/aprobar` y después `/aprobar CONFIRMAR` dentro de 5 minutos. El bot responde con los links de Celoscan.
+8. En tu máquina, `npm run live` todavía puede firmar en el proceso: `PAYOUT_DRY_RUN=false`, `AGENT_PRIVATE_KEY` cargada, reiniciá, `/aprobar` y después `/aprobar CONFIRMAR` dentro de 5 minutos. El bot responde con los links de Celoscan. En Cloudflare el Worker no firma: el pago sale por GitHub Actions o por `npm run payout`. Mirá [Pagos reales](#pagos-reales).
 
 Cada asistente:
 
@@ -99,7 +99,7 @@ Acá no hay token de Telegram ni API key de Luma, y no se mandó ninguna transac
 
 - Los tests del bot usan grammY con la API interceptada. No llaman a `api.telegram.org`.
 - Luma se prueba con un `fetch` falso y con `data/guests.example.json`. El cliente real está en `src/luma/checkin.ts` y pega a `GET /v1/events/guests/get` cuando existen `LUMA_API_KEY` y `LUMA_EVENT_ID`.
-- El pago real usa viem, pero el default es dry-run. Sin `AGENT_PRIVATE_KEY` no hay firma.
+- El pago real usa viem, pero el default es dry-run. El Worker no firma: la clave solo entra en GitHub Actions o en `npm run payout`. Sin `AGENT_PRIVATE_KEY` ahí, no hay firma.
 - ERC-8004 y x402 siguen siendo placeholders. El agent id hay que registrarlo aparte (8004scan) para que el track sea válido.
 
 ## Qué tiene que pasar Franco para correrlo en vivo
@@ -108,8 +108,8 @@ Acá no hay token de Telegram ni API key de Luma, y no se mandó ninguna transac
 2. Su id de Telegram y el de quien más administre (`ADMIN_TELEGRAM_IDS`).
 3. `LUMA_API_KEY` del calendario y el `LUMA_EVENT_ID` (`evt-…`) de la noche. Si Luma Plus no llega, un CSV exportado con mail, nombre, id y si ya hizo check-in.
 4. Las wallets de cada proyecto, en lugar de las de relleno.
-5. La clave de la wallet del pozo, recién cuando quieran pagar (`AGENT_PRIVATE_KEY`) y `PAYOUT_DRY_RUN=false`.
-6. Un poco de CELO en esa wallet para el gas. `/pozo` lo muestra si la dirección está configurada.
+5. La clave de la wallet del pozo, recién cuando quieran pagar. En el Worker no va: es el secreto `AGENT_PRIVATE_KEY` de GitHub Actions (o del `.env` de la laptop) y `PAYOUT_DRY_RUN=false` en el Worker y en el repo. Mirá [Pagos reales](#pagos-reales).
+6. wARS del pozo y un poco de CELO para el gas en esa wallet. `/pozo` lo muestra si `AGENT_WALLET` está configurada.
 
 ## Scripts
 
@@ -126,6 +126,7 @@ Acá no hay token de Telegram ni API key de Luma, y no se mandó ninguna transac
 | `npm run worker:dev` | Worker local con wrangler |
 | `npm run worker:deploy` | Deploy a Cloudflare Workers |
 | `npm run worker:set-webhook` | `POST /setup` del worker ya desplegado |
+| `npm run payout` | Runner de pagos: lee el plan del Worker y manda wARS. En Actions y en la laptop. Default dry-run |
 
 `npm run build` deja `dist/live.js`. `npm run start:prod` lo corre con `node --experimental-sqlite --disable-warning=ExperimentalWarning`.
 
@@ -137,7 +138,7 @@ El Worker no puede hacer long polling: cada request entra, corre y termina. Tele
 
 Los invitados y proyectos de ejemplo van empaquetados en el bundle (`data/guests.example.json` y `data/projects.example.json`). En el Worker no hay disco.
 
-El dry-run es el default (`PAYOUT_DRY_RUN=true`) y tiene que alcanzar para el evento de ensayo: arma el `transfer` de wARS con la etiqueta `celo_40ea7bdf091f` y no firma. Un pago real firma con viem **dentro del request**. En el plan Free el CPU es de **10 ms por invocación** (la espera de red no cuenta). Varias firmas secp256k1 pueden pasarse de ese tope y el request muere con error de CPU. Si pasa, el ensayo igual quedó; el pago en vivo pide el plan de pago de Workers, que sube ese límite.
+El dry-run es el default (`PAYOUT_DRY_RUN=true` en `wrangler.toml`): `/aprobar` arma el `transfer` de wARS con la etiqueta `celo_40ea7bdf091f` y no firma. El Worker **no firma nunca**. En el plan Free el CPU es de **10 ms por invocación** y la primera firma después de un wake se va a 30–57 ms (`privateKeyToAccount` en frío, ~35 ms). Por eso el Worker solo guarda `AGENT_WALLET`. El pago real lo hace GitHub Actions, o la laptop con `npm run payout`. El detalle está en [Pagos reales](#pagos-reales).
 
 ### 1. Cuenta y credenciales
 
@@ -176,10 +177,14 @@ Opcionales, solo si los vas a usar:
 npx wrangler secret put ADMIN_TELEGRAM_IDS
 npx wrangler secret put LUMA_API_KEY
 npx wrangler secret put LUMA_EVENT_ID
-npx wrangler secret put AGENT_PRIVATE_KEY
+npx wrangler secret put AGENT_WALLET
+npx wrangler secret put PAYOUT_RUNNER_SECRET
+npx wrangler secret put GITHUB_DISPATCH_TOKEN
 ```
 
-`WEBHOOK_SECRET`: 1 a 256 caracteres, `A-Z`, `a-z`, `0-9`, `_` o `-`. Es el path y el `secret_token`. `SETUP_SECRET` protege `POST /setup`. `PAYOUT_DRY_RUN` ya está en `true` en `wrangler.toml`. Para local, copiá `.dev.vars.example` a `.dev.vars`.
+No cargues `AGENT_PRIVATE_KEY` en el Worker. La clave firma en GitHub Actions o en la laptop.
+
+`WEBHOOK_SECRET`: 1 a 256 caracteres, `A-Z`, `a-z`, `0-9`, `_` o `-`. Es el path y el `secret_token`. `SETUP_SECRET` protege `POST /setup`. `PAYOUT_RUNNER_SECRET` protege `GET /payout/plan` y `POST /payout/results` (header `x-payout-runner-secret`). `GITHUB_DISPATCH_TOKEN` es un fine-grained token con **Actions: write** solo en `FrancoDuran23/comunyfi`. `PAYOUT_DRY_RUN` ya está en `true` en `wrangler.toml`. Para local, copiá `.dev.vars.example` a `.dev.vars`.
 
 ### 3. Deploy
 
@@ -209,6 +214,75 @@ curl "$WORKER_URL/health"
 Tiene que responder `ok`. Abrí `$WORKER_URL/` y tenés que ver los cuatro proyectos de ejemplo. En Telegram, `/start` al bot. Si no responde, el webhook no quedó registrado o el secreto no coincide.
 
 Para actualizar: `git pull`, `npm install`, `npm run worker:deploy`. Los secretos se quedan. Volvé a correr `worker:set-webhook` solo si cambió la URL o el `WEBHOOK_SECRET`.
+
+## Pagos reales
+
+El Worker no firma. `/aprobar CONFIRMAR`, con el Worker en `PAYOUT_DRY_RUN=false`, congela la ronda en `pagando`, guarda el plan en el Durable Object (destinatarios, montos en unidades base de wARS, id de ronda y clave de idempotencia) y responde `Pagando…`. Después dispara `workflow_dispatch` de `.github/workflows/payout.yml` en `FrancoDuran23/comunyfi`.
+
+Ese workflow **solo corre cuando el archivo está en `main`**. Hasta el merge, GitHub responde 404 y el bot te pide el fallback de la laptop en el momento. Si el dispatch sale bien y en ~3 minutos no vuelve un hash, el bot avisa lo mismo: corré `npm run payout`.
+
+Un segundo intento no vuelve a pagar a quien ya tiene hash. `GET /payout/plan` devuelve solo las líneas pendientes. El runner publica cada hash apenas confirma el receipt, así que un corte a la mitad deja anotado lo que ya salió.
+
+Hay un solo pago a la vez: el workflow usa el grupo de concurrencia `comunyfi-payout`.
+
+### Secretos y variables de GitHub
+
+En el repo, Settings → Secrets and variables → Actions.
+
+Secretos:
+
+| Secreto | Valor |
+| --- | --- |
+| `AGENT_PRIVATE_KEY` | Clave hex `0x` de 32 bytes de la wallet del pozo |
+| `PAYOUT_RUNNER_SECRET` | El mismo string que el secreto del Worker |
+| `WORKER_URL` | Origen https del Worker, sin barra final |
+
+Variables del repo. Si `PAYOUT_DRY_RUN` no está definida o no es exactamente `false`, el runner ensaya y no firma.
+
+| Variable | Default | Para qué |
+| --- | --- | --- |
+| `PAYOUT_DRY_RUN` | ensayo | `false` la noche del pago |
+| `GAS_DROP` | prendido | `false` no manda CELO a los ganadores |
+| `GAS_DROP_CELO` | `0.05` | CELO por ganador, para que puedan mover el wARS. `0` lo apaga |
+| `PAYOUT_FEE_CURRENCY` | vacío (gas en CELO) | `usdt` paga el gas con USA₮ `0x0357EE22278c922e1D36cFe6b899269b161880C4` |
+
+`GITHUB_DISPATCH_TOKEN` no es un secreto de Actions. Vive en el Worker y solo dispara el workflow.
+
+### Cómo fondear la wallet del agente
+
+La dirección es `AGENT_WALLET`. Necesita:
+
+- Los wARS del pozo (`0x0dc4f92879b7670e5f4e4e6e3c801d229129d90d`, 18 decimales).
+- CELO para el gas de cada `transfer`.
+- Si el gas drop sigue prendido, 0,05 CELO extra por cada ganador distinto.
+- Si `PAYOUT_FEE_CURRENCY=usdt`, USA₮ en esa wallet para el gas.
+
+`/pozo` muestra wARS y CELO cuando la dirección está cargada.
+
+### Ensayo
+
+1. Dejá `PAYOUT_DRY_RUN=true` en el Worker. `/aprobar` muestra la etiqueta y no llama a GitHub ni a Celo.
+2. Para ensayar el runner sin mandar plata: pasá el Worker a `PAYOUT_DRY_RUN=false` (variable en el dashboard, o en `wrangler.toml` y un deploy; no dejes `false` commiteado si el default del repo tiene que seguir en ensayo) y **no** pongas la variable del repo en `false`. `/aprobar` y después `/aprobar CONFIRMAR`. El bot dice `Pagando…`. Actions corre, chequea la etiqueta y el bot responde que fue un ensayo. La ronda queda en `pagando` porque no hubo hashes: no es el cierre de la noche.
+3. Lo mismo desde la laptop, sin esperar a que el workflow esté en `main`: en `.env`, `WORKER_URL`, `PAYOUT_RUNNER_SECRET` y `PAYOUT_DRY_RUN` sin definir o en `true`. Después `npm run payout`.
+
+### La noche
+
+1. Wallets reales en cada proyecto. Un `0x000…0001` no congela la ronda.
+2. Wallet del agente fondeada.
+3. `PAYOUT_DRY_RUN=false` en el Worker y en la variable del repo.
+4. `payout.yml` ya mergeado en `main`.
+5. `/cerrar`, `/previsualizar`, `/aprobar`, y `/aprobar CONFIRMAR` dentro de 5 minutos.
+6. El bot responde `Pagando…`. Cuando vuelven los hashes, te manda los links de Celoscan y el tablero los muestra. Al completar todas las líneas, la ronda pasa a `paid`.
+
+### Fallback en la laptop
+
+```bash
+npm run payout
+```
+
+El script lee `.env`. Hacen falta `WORKER_URL` y `PAYOUT_RUNNER_SECRET`. Para mandar de verdad, también `AGENT_PRIVATE_KEY` y `PAYOUT_DRY_RUN=false`. Opcionales: `GAS_DROP`, `GAS_DROP_CELO`, `PAYOUT_FEE_CURRENCY`. El RPC default es `https://forno.celo.org`.
+
+Hace lo mismo que Actions: un `transfer` de wARS por destinatario, nonce explícito, espera el receipt, verifica `celo_40ea7bdf091f` en el calldata, publica el hash y sigue. Después manda el CELO de gas si está habilitado.
 
 ## Hosting en alwaysdata
 
@@ -253,8 +327,11 @@ src/voting/        fichitas, topes y reparto
 src/store/         SQLite de la ronda
 src/luma/          API de Luma y archivo local
 src/wallet/        transfer de wARS con etiqueta, dry-run y saldos
+src/payout/        plan, dispatch a GitHub y el runner (Actions y laptop)
 src/projector/     tablero
 src/worker.ts      entrada de Cloudflare Workers y el Durable Object
 src/identity/      stub ERC-8004
 src/payments/      stub x402
+scripts/payout-runner.ts
+.github/workflows/payout.yml
 ```

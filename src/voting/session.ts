@@ -1,4 +1,4 @@
-import { getAddress, isAddress } from "viem";
+import { getAddress, isAddress, type Address } from "viem";
 import type { SqlDb } from "../store/sql.js";
 import { planPayouts, standings } from "./allocation.js";
 import {
@@ -13,7 +13,7 @@ import {
 } from "./types.js";
 
 const PROJECT_ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
-const STATUSES = new Set<RoundStatus>(["draft", "open", "closed", "paid"]);
+const STATUSES = new Set<RoundStatus>(["draft", "open", "closed", "paying", "paid"]);
 
 export interface PendingAction {
   kind: string;
@@ -57,7 +57,56 @@ export interface Session {
   takePending(telegramUserId: number, kind: string): PendingAction | null;
   recordPayout(entry: RecordedPayout): void;
   livePaidRecipients(): Set<string>;
+  listLivePayouts(): LivePayout[];
+  beginPayout(): void;
+  completePayout(): void;
+  currentPayoutPlan(): StoredPayoutPlan | null;
+  ensurePayoutPlan(input: NewPayoutPlan): StoredPayoutPlan;
+  markPayoutResult(input: PayoutResult): PayoutMark;
+  markPayoutFallbackNotified(idempotencyKey: string): void;
   close(): void;
+}
+
+export interface LivePayout {
+  projectId: string;
+  recipient: string;
+  txHash: string;
+}
+
+export interface StoredPayoutLine {
+  projectId: string;
+  recipient: Address;
+  amount: bigint;
+  txHash: string | null;
+  celoTxHash: string | null;
+}
+
+export interface StoredPayoutPlan {
+  idempotencyKey: string;
+  roundId: number;
+  adminTelegramId: number;
+  createdAt: number;
+  fallbackNotified: boolean;
+  lines: StoredPayoutLine[];
+}
+
+export interface NewPayoutPlan {
+  roundId: number;
+  adminTelegramId: number;
+  createdAt: number;
+  lines: readonly PayoutLine[];
+}
+
+export interface PayoutResult {
+  idempotencyKey: string;
+  recipient: Address;
+  txHash?: string | null;
+  celoTxHash?: string | null;
+}
+
+export interface PayoutMark {
+  updated: boolean;
+  alreadyPaid: boolean;
 }
 
 interface RoundRow {
@@ -124,6 +173,25 @@ export function sessionFromDb(db: SqlDb, defaults: SessionConfig): Session {
   return bindSession(db, defaults);
 }
 
+/** Clave estable del plan. No es un secreto: el endpoint igual exige PAYOUT_RUNNER_SECRET. */
+export function payoutIdempotencyKey(
+  roundId: number,
+  lines: readonly { recipient: string; amount: string }[],
+): string {
+  const payload = [String(roundId), ...lines.map((line) => `${line.recipient.toLowerCase()}:${line.amount}`).sort()].join(
+    "\n",
+  );
+  let h1 = 0x811c9dc5;
+  let h2 = 0x811c9dc5 ^ 0x01000193;
+  for (let i = 0; i < payload.length; i += 1) {
+    const code = payload.charCodeAt(i);
+    h1 = Math.imul(h1 ^ code, 0x01000193);
+    h2 = Math.imul(h2 ^ code, 0x01000193);
+  }
+  const hex = (value: number) => (value >>> 0).toString(16).padStart(8, "0");
+  return `r${roundId}-${hex(h1)}${hex(h2)}`;
+}
+
 function bindSession(db: SqlDb, defaults: SessionConfig): Session {
   const readRound = db.prepare(
     "SELECT name, status, pool_amount, fichitas_per_attendee, max_fichitas_per_project FROM round WHERE id = 1",
@@ -158,9 +226,63 @@ function bindSession(db: SqlDb, defaults: SessionConfig): Session {
     };
   }
 
+  function readPlan(key: string): StoredPayoutPlan | null {
+    const header = db
+      .prepare(
+        "SELECT idempotency_key, round_id, admin_telegram_id, created_at, fallback_notified FROM payout_plan WHERE idempotency_key = ?",
+      )
+      .get(key) as
+      | {
+          idempotency_key: string;
+          round_id: number;
+          admin_telegram_id: number;
+          created_at: number;
+          fallback_notified: number;
+        }
+      | undefined;
+    if (!header) return null;
+    const lines = db
+      .prepare(
+        "SELECT project_id, recipient, amount, tx_hash, celo_tx_hash FROM payout_plan_line WHERE idempotency_key = ? ORDER BY project_id",
+      )
+      .all(key) as Array<{
+      project_id: string;
+      recipient: string;
+      amount: string;
+      tx_hash: string | null;
+      celo_tx_hash: string | null;
+    }>;
+    return {
+      idempotencyKey: header.idempotency_key,
+      roundId: header.round_id,
+      adminTelegramId: header.admin_telegram_id,
+      createdAt: header.created_at,
+      fallbackNotified: header.fallback_notified === 1,
+      lines: lines.map((line) => ({
+        projectId: line.project_id,
+        recipient: getAddress(line.recipient),
+        amount: BigInt(line.amount),
+        txHash: line.tx_hash ?? null,
+        celoTxHash: line.celo_tx_hash ?? null,
+      })),
+    };
+  }
+
+  function readLatestPlan(): StoredPayoutPlan | null {
+    const row = db.prepare("SELECT idempotency_key FROM payout_plan ORDER BY created_at DESC LIMIT 1").get() as
+      | { idempotency_key: string }
+      | undefined;
+    return row ? readPlan(row.idempotency_key) : null;
+  }
+
   function freezeIfPaid(status: RoundStatus): void {
-    if (status === "paid") {
-      throw new AllocationError(AllocationErrorCode.SESSION_FROZEN, "El pozo ya se pagó. No se puede cambiar nada.");
+    if (status === "paid" || status === "paying") {
+      throw new AllocationError(
+        AllocationErrorCode.SESSION_FROZEN,
+        status === "paying"
+          ? "El pago ya está en curso. No se puede cambiar nada."
+          : "El pozo ya se pagó. No se puede cambiar nada.",
+      );
     }
   }
 
@@ -498,6 +620,102 @@ function bindSession(db: SqlDb, defaults: SessionConfig): Session {
         recipient: string;
       }>;
       return new Set(rows.map((row) => row.recipient.toLowerCase()));
+    },
+
+    listLivePayouts() {
+      const rows = db
+        .prepare(
+          "SELECT project_id, recipient, tx_hash FROM payouts WHERE dry_run = 0 AND tx_hash IS NOT NULL ORDER BY id",
+        )
+        .all() as Array<{ project_id: string; recipient: string; tx_hash: string }>;
+      return rows.map((row) => ({
+        projectId: row.project_id,
+        recipient: row.recipient,
+        txHash: row.tx_hash,
+      }));
+    },
+
+    beginPayout() {
+      const status = statusOf();
+      if (status === "paying") return;
+      if (status === "paid") {
+        throw new AllocationError(AllocationErrorCode.ALREADY_APPROVED, "El pozo ya estaba aprobado.");
+      }
+      if (status === "open") {
+        throw new AllocationError(AllocationErrorCode.VOTING_OPEN, "Cerrá la votación antes de aprobar el pago.");
+      }
+      if (status !== "closed") {
+        throw new AllocationError(AllocationErrorCode.VOTING_CLOSED, "Abrí y cerrá la votación antes de aprobar el pago.");
+      }
+      updateStatus.run("paying");
+    },
+
+    completePayout() {
+      const status = statusOf();
+      if (status === "paid") return;
+      if (status !== "paying") {
+        throw new AllocationError(AllocationErrorCode.VOTING_CLOSED, "No hay un pago en curso.");
+      }
+      updateStatus.run("paid");
+    },
+
+    currentPayoutPlan() {
+      return readLatestPlan();
+    },
+
+    ensurePayoutPlan(input) {
+      const open = readLatestPlan();
+      if (open && open.lines.some((line) => line.txHash === null)) return open;
+      const key = payoutIdempotencyKey(
+        input.roundId,
+        input.lines.map((line) => ({ recipient: line.recipient, amount: line.amount.toString() })),
+      );
+      db.prepare(
+        "INSERT INTO payout_plan (idempotency_key, round_id, admin_telegram_id, created_at, fallback_notified) VALUES (?, ?, ?, ?, 0)",
+      ).run(key, input.roundId, input.adminTelegramId, input.createdAt);
+      const insertLine = db.prepare(
+        "INSERT INTO payout_plan_line (idempotency_key, project_id, recipient, amount, tx_hash, celo_tx_hash) VALUES (?, ?, ?, ?, NULL, NULL)",
+      );
+      for (const line of input.lines) {
+        insertLine.run(key, line.projectId, getAddress(line.recipient), line.amount.toString());
+      }
+      const stored = readPlan(key);
+      if (!stored) {
+        throw new AllocationError(AllocationErrorCode.INVALID_CONFIG, "No pude guardar el plan de pago.");
+      }
+      return stored;
+    },
+
+    markPayoutResult(input) {
+      const recipient = getAddress(input.recipient);
+      const row = db
+        .prepare(
+          "SELECT project_id, amount, tx_hash, celo_tx_hash FROM payout_plan_line WHERE idempotency_key = ? AND recipient = ?",
+        )
+        .get(input.idempotencyKey, recipient) as
+        | { project_id: string; amount: string; tx_hash: string | null; celo_tx_hash: string | null }
+        | undefined;
+      if (!row) return { updated: false, alreadyPaid: false };
+      const alreadyPaid = row.tx_hash !== null;
+      if (input.txHash && alreadyPaid) return { updated: false, alreadyPaid: true };
+      const nextHash = row.tx_hash ?? input.txHash ?? null;
+      const nextCelo = row.celo_tx_hash ?? input.celoTxHash ?? null;
+      if (nextHash === row.tx_hash && nextCelo === row.celo_tx_hash) {
+        return { updated: false, alreadyPaid };
+      }
+      db.prepare(
+        "UPDATE payout_plan_line SET tx_hash = ?, celo_tx_hash = ? WHERE idempotency_key = ? AND recipient = ?",
+      ).run(nextHash, nextCelo, input.idempotencyKey, recipient);
+      if (!alreadyPaid && nextHash) {
+        db.prepare(
+          "INSERT INTO payouts (project_id, recipient, amount, tx_hash, dry_run, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        ).run(row.project_id, recipient, row.amount, nextHash, 0, new Date().toISOString());
+      }
+      return { updated: true, alreadyPaid: false };
+    },
+
+    markPayoutFallbackNotified(idempotencyKey) {
+      db.prepare("UPDATE payout_plan SET fallback_notified = 1 WHERE idempotency_key = ?").run(idempotencyKey);
     },
 
     close() {
